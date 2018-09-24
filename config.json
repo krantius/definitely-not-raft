@@ -1,0 +1,16 @@
+{
+  "servers": [
+    {
+      "id": "a",
+      "address": "localhost:8000"
+    },
+    {
+      "id": "b",
+      "address": "localhost:8001"
+    },
+    {
+      "id": "c",
+      "address": "localhost:8002"
+    }
+  ]
+}
