@@ -8,21 +8,27 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gorilla/mux"
+	"github.com/krantius/definitely-not-raft/raft/replication"
 	"github.com/krantius/definitely-not-raft/shared/logging"
 )
 
 // Node is a raft node in a cluster
 type Node struct {
+	// Config stuff
 	id    string
 	port  int
 	term  int
 	state State
 
-	// election stuff
+	// Election stuff
 	election  *Election
 	candidacy *Candidacy
 
-	// timers
+	// Log stuff
+	log *replication.Log
+
+	// Timers
 	electionTimer   *time.Timer
 	electionTimeout time.Duration
 
@@ -30,7 +36,7 @@ type Node struct {
 	heartbeatTimeout time.Duration
 	heartbeatCancel  context.CancelFunc
 
-	// concurrency
+	// Concurrency
 	mu sync.Mutex
 
 	// Connection Stuff
@@ -61,13 +67,18 @@ func NewNode(id string, port int, peers []string) *Node {
 	node.server = rpc.NewServer()
 
 	oldMux := http.DefaultServeMux
-	mux := http.NewServeMux()
-	http.DefaultServeMux = mux
+	http.DefaultServeMux = http.NewServeMux()
 
 	node.server.RegisterName("Raft", node)
 	node.server.HandleHTTP("/", "/debug")
 
 	http.DefaultServeMux = oldMux
+
+	r := mux.NewRouter()
+	sr := r.PathPrefix("/api").Subrouter()
+	sr.Path("/status").Methods("GET").HandlerFunc(node.Status)
+
+	go http.ListenAndServe(":8000", r)
 
 	return node
 }

@@ -5,14 +5,11 @@ import (
 	"net/rpc"
 	"sync"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/krantius/definitely-not-raft/shared/logging"
 )
 
-type LogShipper struct {
-}
-
 func (n *Node) AppendEntries(args AppendEntriesArgs, res *AppendEntriesResponse) error {
-	log.Infof("%s got AppendEntry from %s", n.id, args.LeaderId)
+	logging.Debugf("%s got AppendEntry from %s", n.id, args.LeaderId)
 	// Reset the election timer
 	n.electionTimer.Reset(n.electionTimeout)
 
@@ -34,7 +31,7 @@ func (n *Node) AppendAll() error {
 		go func(p string) {
 			defer wg.Done()
 			if err := n.callAppendEntries(p); err != nil {
-				log.Errorf("callAppendEntries failed for peer %q: %v", p, err)
+				logging.Errorf("callAppendEntries failed for peer %q: %v", p, err)
 			}
 		}(peer)
 	}
@@ -45,10 +42,10 @@ func (n *Node) AppendAll() error {
 }
 
 func (n *Node) callAppendEntries(addr string) error {
-	log.Infof("%s calling AppendEntry to %s", n.id, addr)
+	logging.Debugf("%s calling AppendEntry to %s", n.id, addr)
 	client, err := rpc.Dial("tcp", addr)
 	if err != nil {
-		log.Infof("RPC Client failed: %v\n", err)
+		logging.Infof("RPC Client failed: %v\n", err)
 		return err
 	}
 
@@ -60,7 +57,7 @@ func (n *Node) callAppendEntries(addr string) error {
 	res := &AppendEntriesResponse{}
 
 	if err := client.Call("Raft.AppendEntries", args, res); err != nil {
-		log.Infof("Failed to callRequestVote: %v", err)
+		logging.Infof("Failed to callRequestVote: %v", err)
 		return err
 	}
 
@@ -71,14 +68,14 @@ func (n *Node) heartbeat(ctx context.Context) {
 	for {
 		select {
 		case <-n.heartbeatTimer.C:
-			log.Infof("%s doing heartbeat", n.id)
+			logging.Tracef("%s doing heartbeat", n.id)
 			if err := n.AppendAll(); err != nil {
 				panic(err)
 			}
 
 			n.heartbeatTimer.Reset(n.heartbeatTimeout)
 		case <-ctx.Done():
-			log.Infof("%s heartbeat stopping", n.id)
+			logging.Infof("%s heartbeat stopping", n.id)
 			n.heartbeatTimer.Stop()
 			return
 		}
