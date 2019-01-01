@@ -2,8 +2,8 @@ package raft
 
 // Store is implemented by the client representing the underlying data store
 type Store interface {
-	// Commit is called whenever a raft log is fully replicated and committed
-	Commit(l *Log)
+	Set(key string, val []byte)
+	Delete(key string)
 }
 
 type Operation string

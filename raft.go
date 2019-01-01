@@ -86,12 +86,11 @@ func (r *Raft) Apply(c Command) error {
 	}
 
 	// Append to local log
-	l := &Log{}
 
 	// Call AppendEntries to peers
 
 	// Once we get a quorem from the other nodes, commit and callback to client to update the real map
-	r.fsm.Commit(l)
+	// or do this somewhere else in another callback...
 
 	return nil
 }
