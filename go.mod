@@ -1,3 +1,3 @@
 module github.com/krantius/raft
 
-require github.com/krantius/logging v0.0.0-20181231045026-b98f16fff6bc
+require github.com/krantius/logging v0.0.0-20190101230648-0db3904227bb

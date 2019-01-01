@@ -1,2 +1,4 @@
 github.com/krantius/logging v0.0.0-20181231045026-b98f16fff6bc h1:bhCHPTS6g8TD4Ic6s8gmq/N65UY8A6HQwITeoYbjGXo=
 github.com/krantius/logging v0.0.0-20181231045026-b98f16fff6bc/go.mod h1:rUnZ4VUu6ToWlHJYvdfSkHJ0ITP7/cc/aKi6gkXO8/o=
+github.com/krantius/logging v0.0.0-20190101230648-0db3904227bb h1:UYhJttH/QyuGiNWTs87X+l9kQ3tQ5Xghg08IrPuuSZQ=
+github.com/krantius/logging v0.0.0-20190101230648-0db3904227bb/go.mod h1:rUnZ4VUu6ToWlHJYvdfSkHJ0ITP7/cc/aKi6gkXO8/o=
