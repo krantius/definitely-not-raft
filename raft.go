@@ -36,9 +36,12 @@ type Raft struct {
 	// Connection Stuff
 	rpc   *rpcServer
 	peers []string
+
+	// Data handling
+	fsm Store
 }
 
-func New(id string, port int, peers []string) *Raft {
+func New(cfg Config, fsm Store) *Raft {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
 
@@ -48,9 +51,10 @@ func New(id string, port int, peers []string) *Raft {
 	logging.Infof("Raft starting with electrion timeout %v", timeout)
 
 	ra := &Raft{
-		id:               id,
-		port:             port,
-		peers:            peers,
+		id:               cfg.ID,
+		port:             cfg.Port,
+		peers:            cfg.Peers,
+		fsm:              fsm,
 		state:            Follower,
 		rpc:              &rpcServer{},
 		electionTimer:    time.NewTimer(timeout),
@@ -82,10 +86,12 @@ func (r *Raft) Apply(c Command) error {
 	}
 
 	// Append to local log
+	l := &Log{}
 
 	// Call AppendEntries to peers
 
 	// Once we get a quorem from the other nodes, commit and callback to client to update the real map
+	r.fsm.Commit(l)
 
 	return nil
 }

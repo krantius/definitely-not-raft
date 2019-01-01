@@ -1,24 +1,5 @@
 package raft
 
-type Operation string
-
-const (
-	Set    Operation = "set"
-	Delete Operation = "delete"
-)
-
-type Command struct {
-	Op  Operation
-	Key string
-	Val []byte
-}
-
-type LogEntry struct {
-	Index uint64
-	Term  int
-	Data  []byte
-}
-
 type Election struct {
 	term  int
 	voted string

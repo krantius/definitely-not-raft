@@ -1,20 +1,21 @@
-package replication
+package raft
 
 type Log struct {
 	CurrentTerm  int
 	CurrentIndex int
 	CommitIndex  int
-	entries      []entry
+	logs         []LogEntry
 }
 
-type entry struct {
+type LogEntry struct {
 	Term      int
 	Index     int
 	Committed bool
-	Data      []byte
+	Cmd       Command
 }
 
-func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []entry) bool {
+// Append is called when a leader requests a follower to append entries
+func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []LogEntry) bool {
 	if term < l.CurrentTerm {
 		return false
 	}
@@ -23,14 +24,14 @@ func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []entry
 		return false
 	}
 
-	if l.entries[prevIndex].Term != prevTerm {
+	if l.logs[prevIndex].Term != prevTerm {
 		return false
 	}
 
 	difference := l.CurrentIndex - prevIndex
 	if difference != 0 {
 		// Trim off any old entries
-		l.entries = l.entries[:len(l.entries)-difference]
+		l.logs = l.logs[:len(l.logs)-difference]
 	}
 
 	// Actually add the new entries
@@ -43,10 +44,10 @@ func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []entry
 }
 
 // append will just add to the entries and upate the term/index
-func (l *Log) append(entries []entry) {
-	l.entries = append(l.entries, entries...)
+func (l *Log) append(entries []LogEntry) {
+	l.logs = append(l.logs, entries...)
 
-	last := l.entries[len(l.entries)-1]
+	last := l.logs[len(l.logs)-1]
 	l.CurrentIndex = last.Index
 	l.CurrentTerm = last.Term
 }
@@ -54,7 +55,7 @@ func (l *Log) append(entries []entry) {
 // commit will set all entries between the current index and the provided index
 func (l *Log) commit(index int) {
 	for i := l.CommitIndex; i <= index; i++ {
-		l.entries[i].Committed = true
+		l.logs[i].Committed = true
 	}
 
 	l.CommitIndex = index
