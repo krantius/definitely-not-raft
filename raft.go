@@ -38,7 +38,9 @@ type Raft struct {
 	peers []string
 
 	// Data handling
-	fsm Store
+	fsm      Store
+	log      *Log
+	peerLogs map[string]LogEntry
 }
 
 func New(cfg Config, fsm Store) *Raft {
@@ -61,10 +63,16 @@ func New(cfg Config, fsm Store) *Raft {
 		electionTimeout:  timeout,
 		heartbeatTimer:   time.NewTimer(hbTimeout),
 		heartbeatTimeout: hbTimeout,
+		log:              &Log{},
 	}
 
 	ra.rpc.requestCb = ra.requestVote
 	ra.rpc.appendCb = ra.appendEntries
+
+	ra.peerLogs = make(map[string]LogEntry, len(cfg.Peers))
+	for _, val := range cfg.Peers {
+		ra.peerLogs[val] = LogEntry{}
+	}
 
 	return ra
 }
@@ -86,11 +94,24 @@ func (r *Raft) Apply(c Command) error {
 	}
 
 	// Append to local log
+	log := r.log.appendCmd(c)
 
 	// Call AppendEntries to peers
+	committed := r.appendAll(log.Index, []LogEntry{log})
 
 	// Once we get a quorem from the other nodes, commit and callback to client to update the real map
 	// or do this somewhere else in another callback...
+
+	if !committed {
+		return nil
+	}
+
+	switch c.Op {
+	case Set:
+		r.fsm.Set(c.Key, c.Val)
+	case Delete:
+		r.fsm.Delete(c.Key)
+	}
 
 	return nil
 }

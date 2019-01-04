@@ -8,15 +8,15 @@ type RaftRPC interface {
 type AppendEntriesArgs struct {
 	Term         int
 	LeaderId     string
-	PrevLogIndex uint64
+	PrevLogIndex int
 	PrevLogTerm  int
 	Entries      []LogEntry
-	LeaderCommit uint64
+	LeaderCommit int
 }
 
 type AppendEntriesResponse struct {
-	A int
-	B bool
+	Term    int
+	Success bool
 }
 
 type RequestVoteArgs struct {

@@ -1,10 +1,13 @@
 package raft
 
+import "sync"
+
 type Log struct {
 	CurrentTerm  int
 	CurrentIndex int
 	CommitIndex  int
 	logs         []LogEntry
+	mu           sync.Mutex
 }
 
 type LogEntry struct {
@@ -43,6 +46,22 @@ func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []LogEn
 	return true
 }
 
+func (l *Log) appendCmd(c Command) LogEntry {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.CurrentIndex++
+	le := LogEntry{
+		Term:  l.CurrentTerm,
+		Index: l.CurrentIndex,
+		Cmd:   c,
+	}
+
+	l.logs = append(l.logs, le)
+
+	return le
+}
+
 // append will just add to the entries and upate the term/index
 func (l *Log) append(entries []LogEntry) {
 	l.logs = append(l.logs, entries...)
@@ -54,6 +73,10 @@ func (l *Log) append(entries []LogEntry) {
 
 // commit will set all entries between the current index and the provided index
 func (l *Log) commit(index int) {
+	if l.CommitIndex >= index {
+		return
+	}
+
 	for i := l.CommitIndex; i <= index; i++ {
 		l.logs[i].Committed = true
 	}

@@ -50,6 +50,8 @@ func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error
 		}
 	}
 
+	r.term = args.Term
+
 	logging.Infof("%s voting for %s", r.id, args.CadidateId)
 	res.VoteGranted = true
 
@@ -106,7 +108,7 @@ func (r *Raft) doElection() {
 
 	wg.Wait()
 
-	if r.candidacy.votes > (len(r.peers)+1)/2 {
+	if r.candidacy.votes >= (len(r.peers)+1)/2 {
 		r.state = Leader
 		r.electionTimer.Stop()
 
