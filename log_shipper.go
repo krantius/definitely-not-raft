@@ -30,11 +30,14 @@ func (r *Raft) appendEntries(args AppendEntriesArgs, res *AppendEntriesResponse)
 
 	// Heartbeat
 	if args.Entries == nil {
+		// Need to commit stuff still
 		res.Success = true
 		return nil
 	}
 
 	res.Success = r.log.Append(args.Term, args.PrevLogIndex, args.PrevLogTerm, args.LeaderCommit, args.Entries)
+
+	// Need to actually update the fsm with the entries that were committed...
 
 	return nil
 }
