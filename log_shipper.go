@@ -31,6 +31,9 @@ func (r *Raft) appendEntries(args AppendEntriesArgs, res *AppendEntriesResponse)
 	// Heartbeat
 	if args.Entries == nil {
 		// Need to commit stuff still
+		logging.Debugf("Committing index %d", args.LeaderCommit)
+		r.log.commit(args.LeaderCommit)
+
 		res.Success = true
 		return nil
 	}
