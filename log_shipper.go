@@ -116,7 +116,7 @@ func (r *Raft) heartbeat(ctx context.Context) {
 		case <-r.heartbeatTimer.C:
 			logging.Tracef("%s doing heartbeat", r.id)
 
-			r.appendAll(-1, nil)
+			r.appendAll(r.log.CommitIndex, nil)
 
 			r.heartbeatTimer.Reset(r.heartbeatTimeout)
 		case <-ctx.Done():

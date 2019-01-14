@@ -109,11 +109,14 @@ func (r *Raft) doElection() {
 	wg.Wait()
 
 	if r.candidacy.votes >= (len(r.peers)+1)/2 {
+		logging.Info("Becoming leader...")
 		r.state = Leader
 		r.electionTimer.Stop()
 
 		var ctx context.Context
 		ctx, r.heartbeatCancel = context.WithCancel(context.Background())
+
+		r.log.CurrentTerm = r.term
 
 		go r.heartbeat(ctx)
 	}
