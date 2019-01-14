@@ -1,6 +1,10 @@
 package raft
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/krantius/logging"
+)
 
 type Log struct {
 	CurrentTerm  int
@@ -36,6 +40,8 @@ func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []LogEn
 		// Trim off any old entries
 		l.logs = l.logs[:len(l.logs)-difference]
 	}
+
+	logging.Debug("Accepted heartbeat")
 
 	// Actually add the new entries
 	l.append(entries)
