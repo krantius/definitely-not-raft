@@ -56,7 +56,6 @@ func (l *Log) appendCmd(c Command) LogEntry {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	l.CurrentIndex++
 	le := LogEntry{
 		Term:  l.CurrentTerm,
 		Index: l.CurrentIndex,
@@ -64,6 +63,8 @@ func (l *Log) appendCmd(c Command) LogEntry {
 	}
 
 	l.logs = append(l.logs, le)
+
+	l.CurrentIndex++
 
 	return le
 }
