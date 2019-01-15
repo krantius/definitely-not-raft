@@ -9,7 +9,6 @@ import (
 )
 
 func (r *Raft) appendEntries(args AppendEntriesArgs, res *AppendEntriesResponse) error {
-	logging.Debugf("Got AppendEntry from %s", args.LeaderId)
 	// Reset the election timer
 	r.electionTimer.Reset(r.electionTimeout)
 
@@ -30,9 +29,32 @@ func (r *Raft) appendEntries(args AppendEntriesArgs, res *AppendEntriesResponse)
 
 	// Heartbeat
 	if args.Entries == nil {
+		if args.LeaderCommit == r.log.CommitIndex {
+			logging.Infof("%d = %d. skipping", args.LeaderCommit, r.log.CommitIndex)
+			res.Success = true
+			return nil
+		}
+
+		// Heartbeat beat the actual append stuff, TODO fix this
+		if args.LeaderCommit > r.log.CurrentIndex {
+			logging.Infof("Bad ordering of commit and append, leadCommit = %d curIndex = %d", args.LeaderCommit, r.log.CurrentIndex)
+			res.Success = false
+			return nil
+		}
+
 		// Need to commit stuff still
-		logging.Debugf("Committing index %d", args.LeaderCommit)
-		r.log.commit(args.LeaderCommit)
+		logging.Debugf("Committing index %d from heartbeat", args.LeaderCommit)
+
+		if commits := r.log.commit(args.LeaderCommit); commits != nil {
+			for _, c := range commits {
+				switch c.Cmd.Op {
+				case Set:
+					r.fsm.Set(c.Cmd.Key, c.Cmd.Val)
+				case Delete:
+					r.fsm.Delete(c.Cmd.Key)
+				}
+			}
+		}
 
 		res.Success = true
 		return nil
@@ -46,10 +68,15 @@ func (r *Raft) appendEntries(args AppendEntriesArgs, res *AppendEntriesResponse)
 }
 
 func (r *Raft) appendAll(lastIndex int, entries []LogEntry) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	wg := sync.WaitGroup{}
 
 	var mu sync.Mutex
 	commitCount := 1
+
+	logging.Infof("Leader commit index = %d", r.log.CommitIndex)
 
 	for _, peer := range r.peers {
 		wg.Add(1)
@@ -64,7 +91,7 @@ func (r *Raft) appendAll(lastIndex int, entries []LogEntry) bool {
 				LeaderId:     r.id,
 				LeaderCommit: r.log.CommitIndex,
 				PrevLogIndex: l.Index,
-				PrevLogTerm:  l.Term,
+				PrevLogTerm:  l.Term - 1,
 				Entries:      entries,
 			}
 
@@ -72,6 +99,11 @@ func (r *Raft) appendAll(lastIndex int, entries []LogEntry) bool {
 			if err != nil {
 				logging.Errorf("callAppendEntries failed for peer %q: %v", peer, err)
 				return
+			}
+
+			if entries != nil {
+				r.peerLogs[peer] = entries[len(entries)-1]
+				logging.Infof("Updated peer log %s %+v", peer, r.peerLogs[peer])
 			}
 
 			if res.Success {
@@ -95,8 +127,6 @@ func (r *Raft) appendAll(lastIndex int, entries []LogEntry) bool {
 }
 
 func (r *Raft) callAppendEntries(addr string, args AppendEntriesArgs) (AppendEntriesResponse, error) {
-	logging.Debugf("Calling AppendEntry to %s", addr)
-
 	res := AppendEntriesResponse{}
 
 	client, err := rpc.Dial("tcp", addr)
@@ -117,8 +147,6 @@ func (r *Raft) heartbeat(ctx context.Context) {
 	for {
 		select {
 		case <-r.heartbeatTimer.C:
-			logging.Tracef("%s doing heartbeat", r.id)
-
 			r.appendAll(r.log.CommitIndex, nil)
 
 			r.heartbeatTimer.Reset(r.heartbeatTimeout)

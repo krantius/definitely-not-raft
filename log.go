@@ -23,31 +23,41 @@ type LogEntry struct {
 
 // Append is called when a leader requests a follower to append entries
 func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []LogEntry) bool {
+	logging.Infof("term=%d prevIndex=%d prevTerm=%d commitIndex=%d entriesLen=%d", term, prevIndex, prevTerm, commitIndex, len(entries))
 	if term < l.CurrentTerm {
 		return false
+	}
+
+	// First one, append and move on
+	if l.CurrentIndex == 0 {
+		// Actually add the new entries
+		l.append(entries)
+		return true
 	}
 
 	if l.CurrentIndex < prevIndex {
 		return false
 	}
 
-	if l.logs[prevIndex].Term != prevTerm {
-		return false
-	}
+	/*
+		if l.logs[prevIndex].Term != prevTerm {
+			return false
+		}*/
 
-	difference := l.CurrentIndex - prevIndex
+	/*difference := l.CurrentIndex - prevIndex
 	if difference != 0 {
 		// Trim off any old entries
 		l.logs = l.logs[:len(l.logs)-difference]
-	}
-
-	logging.Debug("Accepted heartbeat")
+		// TODO probably need to update the fsm with the deletes...
+	}*/
 
 	// Actually add the new entries
 	l.append(entries)
 
 	// Commit whatever is in the commitIndex
-	l.commit(commitIndex)
+	//l.commit(commitIndex)
+
+	logging.Tracef("Applied term=%d index=%d commit=%d", term, l.CurrentIndex, l.CommitIndex)
 
 	return true
 }
@@ -76,17 +86,24 @@ func (l *Log) append(entries []LogEntry) {
 	last := l.logs[len(l.logs)-1]
 	l.CurrentIndex = last.Index
 	l.CurrentTerm = last.Term
+
+	logging.Infof("Appended the goods, %+v", l.logs)
 }
 
 // commit will set all entries between the current index and the provided index
-func (l *Log) commit(index int) {
+func (l *Log) commit(index int) []LogEntry {
 	if l.CommitIndex >= index {
-		return
+		return nil
 	}
 
-	for i := l.CommitIndex; i <= index; i++ {
+	committedLogs := []LogEntry{}
+	for i := l.CommitIndex + 1; i <= index; i++ {
 		l.logs[i].Committed = true
+		committedLogs = append(committedLogs, l.logs[i])
 	}
 
 	l.CommitIndex = index
+	logging.Infof("Committed %v", committedLogs)
+
+	return committedLogs
 }

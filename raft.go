@@ -47,10 +47,10 @@ func New(cfg Config, fsm Store) *Raft {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
 
-	timeout := time.Duration(r1.Intn(10000)+500) * time.Millisecond
+	timeout := time.Duration(r1.Intn(10000)+5000) * time.Millisecond
 	hbTimeout := 3 * time.Second
 
-	logging.Infof("Raft starting with electrion timeout %v", timeout)
+	logging.Infof("Raft starting with election timeout %v", timeout)
 
 	ra := &Raft{
 		id:               cfg.ID,
@@ -63,7 +63,9 @@ func New(cfg Config, fsm Store) *Raft {
 		electionTimeout:  timeout,
 		heartbeatTimer:   time.NewTimer(hbTimeout),
 		heartbeatTimeout: hbTimeout,
-		log:              &Log{},
+		log: &Log{
+			CommitIndex: -1,
+		},
 	}
 
 	ra.rpc.requestCb = ra.requestVote
