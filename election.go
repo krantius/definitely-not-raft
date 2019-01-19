@@ -2,10 +2,16 @@ package raft
 
 import (
 	"context"
+	"net"
 	"net/rpc"
 	"sync"
+	"time"
 
 	"github.com/krantius/logging"
+)
+
+const (
+	voteTimeout time.Duration = 500 * time.Millisecond
 )
 
 func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error {
@@ -13,13 +19,16 @@ func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error
 	defer r.mu.Unlock()
 
 	if r.state == Candidate {
-		if args.Term > r.candidacy.term {
+		if args.Term > r.term {
+			logging.Infof("Candidate voting for %s", args.CadidateId)
 			res.VoteGranted = true
 
 			r.election = &Election{
 				term:  args.Term,
 				voted: args.CadidateId,
 			}
+
+			r.state = Follower
 		}
 		res.VoteGranted = false
 
@@ -52,7 +61,7 @@ func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error
 
 	r.term = args.Term
 
-	logging.Infof("%s voting for %s", r.id, args.CadidateId)
+	logging.Infof("Voting for %s", args.CadidateId)
 	res.VoteGranted = true
 
 	return nil
@@ -61,11 +70,13 @@ func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error
 func (r *Raft) callRequestVote(addr string) bool {
 	logging.Infof("Node %s calling for a vote from %s", r.id, addr)
 
-	client, err := rpc.Dial("tcp", addr)
+	conn, err := net.DialTimeout("tcp", addr, voteTimeout)
 	if err != nil {
-		logging.Infof("RPC Client failed: %v\n", err)
+		logging.Infof("RPC Client dial failed: %v\n", err)
 		return false
 	}
+
+	client := rpc.NewClient(conn)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -91,6 +102,12 @@ func (r *Raft) doElection() {
 	// Do vote requests
 	wg := sync.WaitGroup{}
 
+	c := Candidacy{
+		term: r.term,
+	}
+
+	var mu sync.Mutex
+
 	for _, peer := range r.peers {
 		wg.Add(1)
 
@@ -98,9 +115,9 @@ func (r *Raft) doElection() {
 			defer wg.Done()
 
 			if r.callRequestVote(p) {
-				r.mu.Lock()
-				r.candidacy.votes++
-				r.mu.Unlock()
+				mu.Lock()
+				c.votes++
+				mu.Unlock()
 			}
 
 		}(peer)
@@ -108,7 +125,7 @@ func (r *Raft) doElection() {
 
 	wg.Wait()
 
-	if r.candidacy.votes >= (len(r.peers)+1)/2 {
+	if c.votes >= (len(r.peers)+1)/2 {
 		logging.Info("Becoming leader...")
 		r.state = Leader
 		r.electionTimer.Stop()
@@ -116,9 +133,19 @@ func (r *Raft) doElection() {
 		var ctx context.Context
 		ctx, r.heartbeatCancel = context.WithCancel(context.Background())
 
+		for _, val := range r.peers {
+			r.peerLogs[val] = LogEntry{
+				Index: r.log.CurrentIndex,
+				Term:  r.log.CurrentTerm,
+			}
+		}
+
 		r.log.CurrentTerm = r.term
 
 		go r.heartbeat(ctx)
+	} else {
+		// Lost election
+		r.state = Follower
 	}
 }
 
@@ -136,12 +163,6 @@ func (r *Raft) electionCountdown() {
 			r.electionTimer.Reset(r.electionTimeout)
 
 			r.term++
-
-			r.candidacy = &Candidacy{
-				votes: 1,
-				term:  r.term,
-			}
-
 			r.state = Candidate
 			r.mu.Unlock()
 

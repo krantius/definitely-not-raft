@@ -28,21 +28,29 @@ func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []LogEn
 		return false
 	}
 
+	l.CurrentTerm = term
+
 	// First one, append and move on
-	if l.CurrentIndex == 0 {
-		// Actually add the new entries
+	/*if l.CurrentIndex == -1 {
+		l.append(entries)
+		return true
+	}*/
+
+	// First one
+	if entries[0].Index == 0 && l.CurrentIndex == -1 {
 		l.append(entries)
 		return true
 	}
 
 	if l.CurrentIndex < prevIndex {
+		logging.Errorf("Current Index %d < prevIndex %d", l.CurrentIndex, prevIndex)
 		return false
 	}
 
-	/*
-		if l.logs[prevIndex].Term != prevTerm {
-			return false
-		}*/
+	if l.logs[prevIndex].Term != prevTerm {
+		logging.Errorf("PrevIndex %d term %d not equal %d", prevIndex, l.logs[prevIndex].Term, prevTerm)
+		return false
+	}
 
 	/*difference := l.CurrentIndex - prevIndex
 	if difference != 0 {
@@ -55,6 +63,7 @@ func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []LogEn
 	l.append(entries)
 
 	// Commit whatever is in the commitIndex
+	// TODO currently only committing on heartbeats
 	//l.commit(commitIndex)
 
 	logging.Tracef("Applied term=%d index=%d commit=%d", term, l.CurrentIndex, l.CommitIndex)
@@ -66,6 +75,8 @@ func (l *Log) appendCmd(c Command) LogEntry {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	l.CurrentIndex++
+
 	le := LogEntry{
 		Term:  l.CurrentTerm,
 		Index: l.CurrentIndex,
@@ -73,8 +84,6 @@ func (l *Log) appendCmd(c Command) LogEntry {
 	}
 
 	l.logs = append(l.logs, le)
-
-	l.CurrentIndex++
 
 	return le
 }
@@ -87,7 +96,7 @@ func (l *Log) append(entries []LogEntry) {
 	l.CurrentIndex = last.Index
 	l.CurrentTerm = last.Term
 
-	logging.Infof("Appended the goods, %+v", l.logs)
+	logging.Tracef("Appended the goods, %+v", l.logs)
 }
 
 // commit will set all entries between the current index and the provided index
@@ -103,7 +112,17 @@ func (l *Log) commit(index int) []LogEntry {
 	}
 
 	l.CommitIndex = index
-	logging.Infof("Committed %v", committedLogs)
+	logging.Infof("Committed index=%d %+v", index, committedLogs)
 
 	return committedLogs
+}
+
+func (l *Log) walk(le LogEntry) LogEntry {
+	if le.Index == 0 {
+		// Probably won't get here, but might as well check
+		logging.Warning("Tried to walk on the very first log entry")
+		return le
+	}
+
+	return l.logs[le.Index-1]
 }

@@ -3,6 +3,7 @@ package raft
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -17,10 +18,10 @@ type Raft struct {
 	port  int
 	term  int
 	state State
+	ctx   context.Context
 
 	// Election stuff
-	election  *Election
-	candidacy *Candidacy
+	election *Election
 
 	// Timers
 	electionTimer   *time.Timer
@@ -43,7 +44,7 @@ type Raft struct {
 	peerLogs map[string]LogEntry
 }
 
-func New(cfg Config, fsm Store) *Raft {
+func New(ctx context.Context, cfg Config, fsm Store) *Raft {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
 
@@ -53,6 +54,7 @@ func New(cfg Config, fsm Store) *Raft {
 	logging.Infof("Raft starting with election timeout %v", timeout)
 
 	ra := &Raft{
+		ctx:              ctx,
 		id:               cfg.ID,
 		port:             cfg.Port,
 		peers:            cfg.Peers,
@@ -64,7 +66,8 @@ func New(cfg Config, fsm Store) *Raft {
 		heartbeatTimer:   time.NewTimer(hbTimeout),
 		heartbeatTimeout: hbTimeout,
 		log: &Log{
-			CommitIndex: -1,
+			CommitIndex:  -1,
+			CurrentIndex: -1,
 		},
 	}
 
@@ -73,7 +76,10 @@ func New(cfg Config, fsm Store) *Raft {
 
 	ra.peerLogs = make(map[string]LogEntry, len(cfg.Peers))
 	for _, val := range cfg.Peers {
-		ra.peerLogs[val] = LogEntry{}
+		ra.peerLogs[val] = LogEntry{
+			Index: -1,
+			Term:  0,
+		}
 	}
 
 	return ra
@@ -81,9 +87,11 @@ func New(cfg Config, fsm Store) *Raft {
 
 func (r *Raft) Start() {
 	go r.electionCountdown()
-	r.rpc.listen(r.port)
+	go r.rpc.listen(r.port)
 
-	logging.Infof("%s exiting", r.id)
+	<-r.ctx.Done()
+
+	logging.Info("Raft exiting")
 }
 
 // Apply distributes the command to the other raft nodes
@@ -116,4 +124,12 @@ func (r *Raft) Apply(c Command) error {
 	}
 
 	return nil
+}
+
+func (r *Raft) Dump() []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	str := fmt.Sprintf("id=%s state=%s term=%d logTerm=%d index=%d commitIndex=%d\n%+v", r.id, r.state, r.term, r.log.CurrentTerm, r.log.CurrentIndex, r.log.CommitIndex, r.log.logs)
+	return []byte(str)
 }
