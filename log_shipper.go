@@ -118,7 +118,7 @@ func (r *Raft) appendAll(lastIndex int, entries []LogEntry) bool {
 	wg := sync.WaitGroup{}
 
 	var mu sync.Mutex
-	commitCount := 1
+	commitCount := 0
 
 	for _, peer := range r.peers {
 		wg.Add(1)
@@ -141,7 +141,7 @@ func (r *Raft) appendAll(lastIndex int, entries []LogEntry) bool {
 
 			res, err := r.callAppendEntries(peer, args)
 			if err != nil {
-				logging.Errorf("callAppendEntries failed for peer %q: %v", peer, err)
+				logging.Tracef("callAppendEntries failed for peer %q: %v", peer, err)
 				return
 			}
 
@@ -169,9 +169,11 @@ func (r *Raft) appendAll(lastIndex int, entries []LogEntry) bool {
 
 	wg.Wait()
 
-	if commitCount >= (len(r.peers)+1)/2 {
+	if commitCount >= len(r.peers)/2 {
 		r.log.commit(lastIndex)
 		return true
+	} else {
+		logging.Warningf("Not committing %+v, only got %d commits", entries, commitCount)
 	}
 
 	return false
