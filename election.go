@@ -134,9 +134,15 @@ func (r *Raft) doElection() {
 		ctx, r.heartbeatCancel = context.WithCancel(context.Background())
 
 		for _, val := range r.peers {
-			r.peerLogs[val] = LogEntry{
-				Index: r.log.CurrentIndex,
-				Term:  r.log.CurrentTerm,
+			r.peerLogs[val] = &peer{
+				addr:  val,
+				l:     r.log,
+				state: stateSynced,
+				current: LogEntry{
+					Index: r.log.CurrentIndex,
+					Term:  r.log.CurrentTerm,
+				},
+				ctx: context.Background(), //TODO FIX ME dont use background
 			}
 		}
 

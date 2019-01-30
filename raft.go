@@ -39,9 +39,11 @@ type Raft struct {
 	peers []string
 
 	// Data handling
-	fsm      Store
-	log      *Log
-	peerLogs map[string]LogEntry
+	fsm Store
+	log *Log
+
+	// Peers
+	peerLogs map[string]*peer
 }
 
 func New(ctx context.Context, cfg Config, fsm Store) *Raft {
@@ -49,7 +51,7 @@ func New(ctx context.Context, cfg Config, fsm Store) *Raft {
 	r1 := rand.New(s1)
 
 	timeout := time.Duration(r1.Intn(10000)+5000) * time.Millisecond
-	hbTimeout := 3 * time.Second
+	hbTimeout := 1 * time.Second
 
 	logging.Infof("Raft starting with election timeout %v", timeout)
 
@@ -63,22 +65,29 @@ func New(ctx context.Context, cfg Config, fsm Store) *Raft {
 		rpc:              &rpcServer{},
 		electionTimer:    time.NewTimer(timeout),
 		electionTimeout:  timeout,
-		heartbeatTimer:   time.NewTimer(hbTimeout),
+		heartbeatTimer:   time.NewTimer(0),
 		heartbeatTimeout: hbTimeout,
 		log: &Log{
 			CommitIndex:  -1,
 			CurrentIndex: -1,
+			fsm:          fsm,
 		},
 	}
 
 	ra.rpc.requestCb = ra.requestVote
 	ra.rpc.appendCb = ra.appendEntries
 
-	ra.peerLogs = make(map[string]LogEntry, len(cfg.Peers))
+	ra.peerLogs = make(map[string]*peer, len(cfg.Peers))
 	for _, val := range cfg.Peers {
-		ra.peerLogs[val] = LogEntry{
-			Index: -1,
-			Term:  0,
+		ra.peerLogs[val] = &peer{
+			addr:  val,
+			l:     ra.log,
+			state: stateSynced,
+			current: LogEntry{
+				Index: -1,
+				Term:  0,
+			},
+			ctx: context.Background(), // TODO  not use background
 		}
 	}
 
@@ -107,21 +116,7 @@ func (r *Raft) Apply(c Command) error {
 	log := r.log.appendCmd(c)
 
 	// Call AppendEntries to peers
-	committed := r.appendAll(log.Index, []LogEntry{log})
-
-	// Once we get a quorem from the other nodes, commit and callback to client to update the real map
-	// or do this somewhere else in another callback...
-
-	if !committed {
-		return nil
-	}
-
-	switch c.Op {
-	case Set:
-		r.fsm.Set(c.Key, c.Val)
-	case Delete:
-		r.fsm.Delete(c.Key)
-	}
+	r.appendAll([]LogEntry{log})
 
 	return nil
 }

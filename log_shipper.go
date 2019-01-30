@@ -2,8 +2,6 @@ package raft
 
 import (
 	"context"
-	"net"
-	"net/rpc"
 	"sync"
 	"time"
 
@@ -14,6 +12,7 @@ const (
 	appendTimeout time.Duration = 200 * time.Millisecond
 )
 
+// appendEntries is called when a follower gets a request from a leader
 func (r *Raft) appendEntries(args AppendEntriesArgs, res *AppendEntriesResponse) error {
 	// Reset the election timer
 	r.electionTimer.Reset(r.electionTimeout)
@@ -72,130 +71,28 @@ func (r *Raft) appendEntries(args AppendEntriesArgs, res *AppendEntriesResponse)
 	return nil
 }
 
-func (r *Raft) appendSingle(peer string, entries []LogEntry) error {
-	l := r.peerLogs[peer]
-
-	args := AppendEntriesArgs{
-		Term:         r.term,
-		LeaderId:     r.id,
-		LeaderCommit: r.log.CommitIndex,
-		PrevLogIndex: l.Index,
-		PrevLogTerm:  l.Term,
-		Entries:      entries,
-	}
-
-	logging.Tracef("appendSingle peer=%s args=%+v", peer, args)
-
-	res, err := r.callAppendEntries(peer, args)
-	if err != nil {
-		logging.Errorf("callAppendEntries failed for peer %q: %v", peer, err)
-		return err
-	}
-
-	if res.Success {
-		r.peerLogs[peer] = entries[len(entries)-1]
-		logging.Debugf("Updated peer log %s %+v", peer, r.peerLogs[peer])
-	} else {
-		// TODO handle non-success case
-		logging.Error("Single append failed D:")
-		prev := r.log.walk(l)
-		r.peerLogs[peer] = prev
-
-		if err := r.appendSingle(peer, r.log.logs[l.Index:]); err != nil {
-			logging.Errorf("Failed to append entries on single retry: %v", err)
-		}
-	}
-
-	return nil
-}
-
 // appendAll sends out log entries to all the peers
 // Leader fanning out to peers
-func (r *Raft) appendAll(lastIndex int, entries []LogEntry) bool {
+func (r *Raft) appendAll(entries []LogEntry) {
 	//r.mu.Lock()
 	//defer r.mu.Unlock()
 
+	logging.Tracef("Appending all %v", entries)
+
 	wg := sync.WaitGroup{}
 
-	var mu sync.Mutex
-	commitCount := 0
-
-	for _, peer := range r.peers {
+	for _, p := range r.peerLogs {
 		wg.Add(1)
 
-		go func(peer string) {
+		go func(p *peer) {
 			defer wg.Done()
-
-			l := r.peerLogs[peer]
-
-			args := AppendEntriesArgs{
-				Term:         r.term,
-				LeaderId:     r.id,
-				LeaderCommit: r.log.CommitIndex,
-				PrevLogIndex: l.Index,
-				PrevLogTerm:  l.Term,
-				Entries:      entries,
+			if err := p.AppendLog(r.term, r.log.CommitIndex, entries); err != nil {
+				logging.Warningf("AppendLog failed for peer %s", p.addr)
 			}
-
-			logging.Tracef("appendAll peer=%s args=%+v", peer, args)
-
-			res, err := r.callAppendEntries(peer, args)
-			if err != nil {
-				logging.Tracef("callAppendEntries failed for peer %q: %v", peer, err)
-				return
-			}
-
-			if res.Success {
-				mu.Lock()
-				commitCount++
-				mu.Unlock()
-
-				if entries != nil {
-					r.peerLogs[peer] = entries[len(entries)-1]
-					logging.Debugf("Updated peer log %s %+v", peer, r.peerLogs[peer])
-				}
-			} else {
-				// TODO handle non-success case
-				prev := r.log.walk(l)
-				r.peerLogs[peer] = prev
-
-				if err := r.appendSingle(peer, r.log.logs[l.Index:]); err != nil {
-					logging.Errorf("Failed to append entries on single retry: %v", err)
-					return
-				}
-			}
-		}(peer)
+		}(p)
 	}
 
 	wg.Wait()
-
-	if commitCount >= len(r.peers)/2 {
-		r.log.commit(lastIndex)
-		return true
-	} else {
-		logging.Warningf("Not committing %+v, only got %d commits", entries, commitCount)
-	}
-
-	return false
-}
-
-func (r *Raft) callAppendEntries(addr string, args AppendEntriesArgs) (AppendEntriesResponse, error) {
-	res := AppendEntriesResponse{}
-
-	conn, err := net.DialTimeout("tcp", addr, appendTimeout)
-	if err != nil {
-		logging.Infof("RPC Client dial failed: %v\n", err)
-		return res, err
-	}
-
-	client := rpc.NewClient(conn)
-
-	if err := client.Call("Raft.AppendEntries", args, &res); err != nil {
-		logging.Infof("Failed to callRequestVote: %v", err)
-		return res, err
-	}
-
-	return res, nil
 }
 
 func (r *Raft) heartbeat(ctx context.Context) {
@@ -204,7 +101,23 @@ func (r *Raft) heartbeat(ctx context.Context) {
 		case <-r.heartbeatTimer.C:
 			r.election = nil
 
-			r.appendAll(r.log.CommitIndex, nil)
+			wg := sync.WaitGroup{}
+
+			r.mu.Lock()
+
+			for _, p := range r.peerLogs {
+				wg.Add(1)
+				go func(p *peer) {
+					defer wg.Done()
+					if err := p.Heartbeat(r.term, r.log.CommitIndex); err != nil {
+						logging.Warningf("Heartbeat failed for %s", p.addr)
+					}
+				}(p)
+			}
+
+			wg.Wait()
+			r.mu.Unlock()
+
 			r.heartbeatTimer.Reset(r.heartbeatTimeout)
 		case <-ctx.Done():
 			logging.Info("Heartbeat stopping")

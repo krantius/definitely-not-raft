@@ -7,18 +7,20 @@ import (
 )
 
 type Log struct {
-	CurrentTerm  int
-	CurrentIndex int
-	CommitIndex  int
-	logs         []LogEntry
-	mu           sync.Mutex
+	CurrentTerm     int
+	CurrentIndex    int
+	CommitIndex     int
+	RequiredCommits int
+	fsm             Store
+	logs            []LogEntry
+	mu              sync.RWMutex
 }
 
 type LogEntry struct {
-	Term      int
-	Index     int
-	Committed bool
-	Cmd       Command
+	Term    int
+	Index   int
+	Commits int
+	Cmd     Command
 }
 
 // Append is called when a leader requests a follower to append entries
@@ -90,6 +92,9 @@ func (l *Log) appendCmd(c Command) LogEntry {
 
 // append will just add to the entries and upate the term/index
 func (l *Log) append(entries []LogEntry) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	l.logs = append(l.logs, entries...)
 
 	last := l.logs[len(l.logs)-1]
@@ -101,13 +106,15 @@ func (l *Log) append(entries []LogEntry) {
 
 // commit will set all entries between the current index and the provided index
 func (l *Log) commit(index int) []LogEntry {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
 	if l.CommitIndex >= index {
 		return nil
 	}
 
 	committedLogs := []LogEntry{}
 	for i := l.CommitIndex + 1; i <= index; i++ {
-		l.logs[i].Committed = true
 		committedLogs = append(committedLogs, l.logs[i])
 	}
 
@@ -117,12 +124,69 @@ func (l *Log) commit(index int) []LogEntry {
 	return committedLogs
 }
 
+// TODO go on another thread
+// Or do this one level higher
+func (l *Log) commitCb(index int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	prev := l.CommitIndex
+	for i := l.CommitIndex + 1; i <= index; i++ {
+		l.logs[i].Commits++
+
+		if l.logs[i].Commits >= l.RequiredCommits {
+			// Relying on the fact that all log entries will be committed sequentially
+			l.CommitIndex = i
+		}
+	}
+
+	if prev != l.CommitIndex {
+		for i := prev + 1; i <= l.CommitIndex; i++ {
+			cmd := l.logs[i].Cmd
+			switch cmd.Op {
+			case Set:
+				l.fsm.Set(cmd.Key, cmd.Val)
+			case Delete:
+				l.fsm.Delete(cmd.Key)
+			}
+		}
+	}
+}
+
 func (l *Log) walk(le LogEntry) LogEntry {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
 	if le.Index == 0 {
 		// Probably won't get here, but might as well check
 		logging.Warning("Tried to walk on the very first log entry")
-		return le
+		return LogEntry{
+			Index: -1,
+		}
 	}
 
 	return l.logs[le.Index-1]
+}
+
+func (l *Log) get(index int) LogEntry {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	return l.logs[index]
+}
+
+// If start/end == -1, go from beginning or end
+func (l *Log) Range(start, end int) []LogEntry {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	if start == -1 {
+		return l.logs[:end]
+	}
+
+	if end == -1 {
+		return l.logs[start:]
+	}
+
+	return l.logs[start:end]
 }
