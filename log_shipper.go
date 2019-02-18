@@ -40,8 +40,7 @@ func (r *Raft) appendEntries(args AppendEntriesArgs, res *AppendEntriesResponse)
 			return nil
 		}
 
-		// Heartbeat beat the actual append stuff, TODO fix this
-		// OR this means a node is super behind and needs to be resynced
+		// This means a node is behind and needs to be resynced
 		if args.LeaderCommit > r.log.CurrentIndex {
 			logging.Warningf("Follower is behind leader and needs to be resynced, leadCommit = %d curIndex = %d", args.LeaderCommit, r.log.CurrentIndex)
 			res.Success = false

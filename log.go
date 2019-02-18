@@ -48,11 +48,12 @@ func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []LogEn
 		return false
 	}
 
-	/*difference := l.CurrentIndex - prevIndex
+	difference := l.CurrentIndex - prevIndex
 	if difference != 0 {
-		// Trim off any old entries
+		// If the current index is greater than the previous index from the leader, we have extraneous entries
+		// Trim them
 		l.logs = l.logs[:len(l.logs)-difference]
-	}*/
+	}
 
 	// Actually add the new entries
 	l.append(entries)
