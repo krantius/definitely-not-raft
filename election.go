@@ -29,8 +29,9 @@ func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error
 			}
 
 			r.state = Follower
+		} else {
+			res.VoteGranted = false
 		}
-		res.VoteGranted = false
 
 		return nil
 	}
@@ -42,7 +43,7 @@ func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error
 	}
 
 	if args.Term <= r.term {
-		// Not a new term, continue with our election
+		// Not a new term
 		res.VoteGranted = false
 		return nil
 	}
@@ -57,6 +58,8 @@ func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error
 			r.heartbeatCancel()
 			r.heartbeatCancel = nil
 		}
+
+		r.state = Follower
 	}
 
 	r.term = args.Term

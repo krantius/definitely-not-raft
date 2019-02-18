@@ -74,9 +74,6 @@ func (r *Raft) appendEntries(args AppendEntriesArgs, res *AppendEntriesResponse)
 // appendAll sends out log entries to all the peers
 // Leader fanning out to peers
 func (r *Raft) appendAll(entries []LogEntry) {
-	//r.mu.Lock()
-	//defer r.mu.Unlock()
-
 	logging.Tracef("Appending all %v", entries)
 
 	wg := sync.WaitGroup{}

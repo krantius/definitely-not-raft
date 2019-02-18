@@ -32,12 +32,6 @@ func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []LogEn
 
 	l.CurrentTerm = term
 
-	// First one, append and move on
-	/*if l.CurrentIndex == -1 {
-		l.append(entries)
-		return true
-	}*/
-
 	// First one
 	if entries[0].Index == 0 && l.CurrentIndex == -1 {
 		l.append(entries)
@@ -58,7 +52,6 @@ func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []LogEn
 	if difference != 0 {
 		// Trim off any old entries
 		l.logs = l.logs[:len(l.logs)-difference]
-		// TODO probably need to update the fsm with the deletes...
 	}*/
 
 	// Actually add the new entries
