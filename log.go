@@ -38,7 +38,7 @@ func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []LogEn
 		return true
 	}*/
 
-	// First one
+	// First one TODO remove the need for special case
 	if entries[0].Index == 0 && l.CurrentIndex == -1 {
 		l.append(entries)
 		return true
@@ -54,12 +54,12 @@ func (l *Log) Append(term, prevIndex, prevTerm, commitIndex int, entries []LogEn
 		return false
 	}
 
-	/*difference := l.CurrentIndex - prevIndex
+	difference := l.CurrentIndex - prevIndex
 	if difference != 0 {
-		// Trim off any old entries
+		// If the current index is greater than the previous index from the leader, we have extraneous entries
+		// Trim them
 		l.logs = l.logs[:len(l.logs)-difference]
-		// TODO probably need to update the fsm with the deletes...
-	}*/
+	}
 
 	// Actually add the new entries
 	l.append(entries)

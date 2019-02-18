@@ -11,7 +11,25 @@ import (
 )
 
 const (
-	voteTimeout time.Duration = 500 * time.Millisecond
+	voteRpcTimeout time.Duration = 500 * time.Millisecond
+)
+
+type Election struct {
+	term  int
+	voted string
+}
+
+type Candidacy struct {
+	term  int
+	votes int
+}
+
+type State string
+
+const (
+	Follower  State = "follower"
+	Candidate State = "candidate"
+	Leader    State = "leader"
 )
 
 func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error {
@@ -70,7 +88,7 @@ func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error
 func (r *Raft) callRequestVote(addr string) bool {
 	logging.Infof("Node %s calling for a vote from %s", r.id, addr)
 
-	conn, err := net.DialTimeout("tcp", addr, voteTimeout)
+	conn, err := net.DialTimeout("tcp", addr, voteRpcTimeout)
 	if err != nil {
 		logging.Infof("RPC Client dial failed: %v\n", err)
 		return false
@@ -96,7 +114,7 @@ func (r *Raft) callRequestVote(addr string) bool {
 	return res.VoteGranted
 }
 
-func (r *Raft) doElection() {
+func (r *Raft) callElection() {
 	logging.Info("Starting election")
 
 	// Do vote requests
@@ -172,7 +190,7 @@ func (r *Raft) electionCountdown() {
 			r.state = Candidate
 			r.mu.Unlock()
 
-			r.doElection()
+			r.callElection()
 		}
 	}
 }

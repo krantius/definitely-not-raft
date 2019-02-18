@@ -6,15 +6,15 @@ type Store interface {
 	Delete(key string)
 }
 
+type Command struct {
+	Op  Operation
+	Key string
+	Val []byte
+}
+
 type Operation string
 
 const (
 	Set    Operation = "set"
 	Delete Operation = "delete"
 )
-
-type Command struct {
-	Op  Operation
-	Key string
-	Val []byte
-}

@@ -170,7 +170,6 @@ func (p *peer) catchUp(term, commit int) error {
 			p.state = stateSynced
 			p.mu.Unlock()
 
-			// Call commit CB or something
 			p.l.commitCb(p.current.Index)
 			return nil
 		case <-p.ctx.Done():
