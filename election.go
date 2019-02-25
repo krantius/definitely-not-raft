@@ -14,6 +14,7 @@ const (
 	voteRpcTimeout time.Duration = 500 * time.Millisecond
 )
 
+// Election
 type Election struct {
 	term  int
 	voted string
@@ -38,12 +39,12 @@ func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error
 
 	if r.state == Candidate {
 		if args.Term > r.term {
-			logging.Infof("Candidate voting for %s", args.CadidateId)
+			logging.Infof("Candidate voting for %s", args.CadidateID)
 			res.VoteGranted = true
 
 			r.election = &Election{
 				term:  args.Term,
-				voted: args.CadidateId,
+				voted: args.CadidateID,
 			}
 
 			r.state = Follower
@@ -68,21 +69,16 @@ func (r *Raft) requestVote(args RequestVoteArgs, res *RequestVoteResponse) error
 
 	r.election = &Election{
 		term:  args.Term,
-		voted: args.CadidateId,
+		voted: args.CadidateID,
 	}
 
 	if r.state == Leader {
-		if r.heartbeatCancel != nil {
-			r.heartbeatCancel()
-			r.heartbeatCancel = nil
-		}
-
-		r.state = Follower
+		r.stepDown()
 	}
 
 	r.term = args.Term
 
-	logging.Infof("Voting for %s", args.CadidateId)
+	logging.Infof("Voting for %s", args.CadidateID)
 	res.VoteGranted = true
 
 	return nil
@@ -104,7 +100,7 @@ func (r *Raft) callRequestVote(addr string) bool {
 
 	args := RequestVoteArgs{
 		Term:       r.term,
-		CadidateId: r.id,
+		CadidateID: r.id,
 	}
 
 	res := &RequestVoteResponse{}
@@ -147,33 +143,57 @@ func (r *Raft) callElection() {
 	wg.Wait()
 
 	if c.votes >= (len(r.peers)+1)/2 {
-		logging.Info("Becoming leader...")
-		r.state = Leader
-		r.electionTimer.Stop()
-
-		var ctx context.Context
-		ctx, r.heartbeatCancel = context.WithCancel(context.Background())
-
-		for _, val := range r.peers {
-			r.peerLogs[val] = &peer{
-				addr:  val,
-				l:     r.log,
-				state: stateSynced,
-				current: LogEntry{
-					Index: r.log.CurrentIndex,
-					Term:  r.log.CurrentTerm,
-				},
-				ctx: context.Background(), //TODO FIX ME dont use background
-			}
-		}
-
-		r.log.CurrentTerm = r.term
-
-		go r.heartbeat(ctx)
+		r.stepUp()
 	} else {
 		// Lost election
 		r.state = Follower
 	}
+}
+
+func (r *Raft) stepUp() {
+	// Step up as leader...
+	logging.Info("Becoming leader...")
+	r.state = Leader
+	r.electionTimer.Stop()
+
+	var ctx context.Context
+	ctx, r.heartbeatCancel = context.WithCancel(context.Background())
+
+	for i, val := range r.peers {
+		cancelCtx, cancel := context.WithCancel(context.Background())
+		r.peerLogs[val] = &peer{
+			addr:  val,
+			l:     r.log,
+			state: stateSynced,
+			current: LogEntry{
+				Index: r.log.CurrentIndex,
+				Term:  r.log.CurrentTerm,
+			},
+			ctx: cancelCtx,
+		}
+
+		r.peerCancels[i] = cancel
+	}
+
+	r.log.CurrentTerm = r.term
+
+	go r.heartbeat(ctx)
+}
+
+func (r *Raft) stepDown() {
+	// Step down from leader...
+	if r.heartbeatCancel != nil {
+		r.heartbeatCancel()
+		r.heartbeatCancel = nil
+	}
+
+	for _, cancel := range r.peerCancels {
+		if cancel != nil {
+			cancel()
+		}
+	}
+
+	r.state = Follower
 }
 
 func (r *Raft) electionCountdown() {

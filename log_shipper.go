@@ -22,9 +22,16 @@ func (r *Raft) appendEntries(args AppendEntriesArgs, res *AppendEntriesResponse)
 
 	res.Term = r.term
 
-	// If leader and request term is less, ignore
-	if args.Term < r.term && r.state == Leader {
+	if args.Term < r.term {
 		res.Success = false
+		res.Term = r.term
+		return nil
+	}
+
+	if r.state == Leader && args.Term > r.term {
+		// If leader and greater term, step down as leader
+		r.stepDown()
+
 		return nil
 	}
 
@@ -35,7 +42,6 @@ func (r *Raft) appendEntries(args AppendEntriesArgs, res *AppendEntriesResponse)
 	// Heartbeat
 	if args.Entries == nil {
 		if args.LeaderCommit == r.log.CommitIndex {
-			logging.Tracef("Commit index %d = %d. skipping", args.LeaderCommit, r.log.CommitIndex)
 			res.Success = true
 			return nil
 		}
@@ -82,7 +88,7 @@ func (r *Raft) appendAll(entries []LogEntry) {
 
 		go func(p *peer) {
 			defer wg.Done()
-			if err := p.AppendLog(r.term, r.log.CommitIndex, entries); err != nil {
+			if err := p.appendLog(r.term, r.log.CommitIndex, entries); err != nil {
 				logging.Warningf("AppendLog failed for peer %s", p.addr)
 			}
 		}(p)
@@ -105,7 +111,7 @@ func (r *Raft) heartbeat(ctx context.Context) {
 				wg.Add(1)
 				go func(p *peer) {
 					defer wg.Done()
-					if err := p.Heartbeat(r.term, r.log.CommitIndex); err != nil {
+					if err := p.heartbeat(r.term, r.log.CommitIndex); err != nil {
 						logging.Warningf("Heartbeat failed for %s", p.addr)
 					}
 				}(p)

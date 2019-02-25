@@ -6,6 +6,7 @@ import (
 	"github.com/krantius/logging"
 )
 
+// Log is the raft log used to store log entries
 type Log struct {
 	CurrentTerm     int
 	CurrentIndex    int
@@ -16,6 +17,7 @@ type Log struct {
 	mu              sync.RWMutex
 }
 
+// LogEntry is a single operation that gets applied to the FSM
 type LogEntry struct {
 	Term    int
 	Index   int
@@ -169,7 +171,7 @@ func (l *Log) get(index int) LogEntry {
 	return l.logs[index]
 }
 
-// If start/end == -1, go from beginning or end
+// Range returns a range of LogEntry objects given a start and end period
 func (l *Log) Range(start, end int) []LogEntry {
 	l.mu.RLock()
 	defer l.mu.RUnlock()

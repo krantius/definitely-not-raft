@@ -10,11 +10,6 @@ import (
 	"github.com/krantius/logging"
 )
 
-type Peer interface {
-	Heartbeat(commit int) error
-	AppendLog([]LogEntry) error
-}
-
 type peerState string
 
 const (
@@ -31,7 +26,7 @@ type peer struct {
 	ctx     context.Context
 }
 
-func (p *peer) Heartbeat(term, commit int) error {
+func (p *peer) heartbeat(term, commit int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -65,7 +60,7 @@ func (p *peer) Heartbeat(term, commit int) error {
 		// Resync...
 		p.state = stateSyncing
 		p.current = p.l.walk(p.current)
-		go p.catchUp(term, commit)
+		go p.sync(term, commit)
 		return nil
 	}
 
@@ -74,7 +69,7 @@ func (p *peer) Heartbeat(term, commit int) error {
 	return nil
 }
 
-func (p *peer) AppendLog(term, commit int, entries []LogEntry) error {
+func (p *peer) appendLog(term, commit int, entries []LogEntry) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -108,7 +103,7 @@ func (p *peer) AppendLog(term, commit int, entries []LogEntry) error {
 		// Resync...
 		p.state = stateSyncing
 		p.current = p.l.walk(p.current)
-		go p.catchUp(term, commit)
+		go p.sync(term, commit)
 		return nil
 	}
 
@@ -122,7 +117,7 @@ func (p *peer) AppendLog(term, commit int, entries []LogEntry) error {
 }
 
 // TODO make this a mega function that listens on a channel for append entries, has timer for heartbeats, and ctx done?
-func (p *peer) catchUp(term, commit int) error {
+func (p *peer) sync(term, commit int) error {
 	timer := time.NewTimer(0)
 	timeout := time.Second
 

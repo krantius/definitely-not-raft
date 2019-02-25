@@ -43,9 +43,18 @@ type Raft struct {
 	log *Log
 
 	// Peers
-	peerLogs map[string]*peer
+	peerLogs    map[string]*peer
+	peerCancels []context.CancelFunc
 }
 
+// Config contains the settings needed to start a raft node
+type Config struct {
+	ID    string
+	Port  int
+	Peers []string
+}
+
+// New creates a new raft node
 func New(ctx context.Context, cfg Config, fsm Store) *Raft {
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
@@ -78,22 +87,12 @@ func New(ctx context.Context, cfg Config, fsm Store) *Raft {
 	ra.rpc.appendCb = ra.appendEntries
 
 	ra.peerLogs = make(map[string]*peer, len(cfg.Peers))
-	for _, val := range cfg.Peers {
-		ra.peerLogs[val] = &peer{
-			addr:  val,
-			l:     ra.log,
-			state: stateSynced,
-			current: LogEntry{
-				Index: -1,
-				Term:  0,
-			},
-			ctx: context.Background(), // TODO  not use background
-		}
-	}
+	ra.peerCancels = make([]context.CancelFunc, len(cfg.Peers))
 
 	return ra
 }
 
+// Start begins the election countdown and starts the rpc server
 func (r *Raft) Start() {
 	go r.electionCountdown()
 	go r.rpc.listen(r.port)
@@ -121,6 +120,8 @@ func (r *Raft) Apply(c Command) error {
 	return nil
 }
 
+// Dump is currently used to get the state of the raft server for debugging
+// TODO delete this
 func (r *Raft) Dump() []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
